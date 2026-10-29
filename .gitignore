@@ -1,0 +1,13 @@
+
+.venv/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.env
+
+data/olist_raw/
+data/anchal_seller_temporal_features_backup.csv
+data/seller_risk_labels_backup.csv
+data/processed/seller_report_features.csv
+data/processed/seller_report_features_model_ready.csv
+data/processed/seller_report_features_labeled.csv
