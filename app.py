@@ -18,12 +18,13 @@ st.caption(
 )
 
 st.divider()
-st.subheader("Experimental Five-Feature Trust Scores")
+st.subheader("Experimental Three-Feature Trust Scores")
 
 summary_path = "data/processed/seller_level_trust_scores.csv"
 
 try:
     seller_summary = pd.read_csv(summary_path)
+
     seller_summary["score_reliability"] = seller_summary["days_scored"].apply(
         lambda days: (
             "Low" if days <= 1
@@ -49,7 +50,9 @@ except FileNotFoundError:
 
 @st.cache_data
 def load_data():
-    return pd.read_csv("data/anchal_seller_temporal_features_final.csv")
+    return pd.read_csv(
+        "data/anchal_seller_temporal_features_final.csv"
+    )
 
 
 @st.cache_resource
@@ -72,7 +75,10 @@ try:
         sellers
     )
 
-    seller_data = df[df["seller_id"] == selected_seller].copy()
+    seller_data = df[
+        df["seller_id"] == selected_seller
+    ].copy()
+
     seller_data["date"] = pd.to_datetime(seller_data["date"])
     seller_data = seller_data.sort_values("date")
 
@@ -82,7 +88,8 @@ try:
     )
 
     row = seller_data[
-        seller_data["date"].dt.strftime("%Y-%m-%d") == selected_date
+        seller_data["date"].dt.strftime("%Y-%m-%d")
+        == selected_date
     ].iloc[[0]]
 
     features = row.drop(columns=["seller_id", "date"])
@@ -90,10 +97,12 @@ try:
     X = df.drop(columns=["seller_id", "date"])
     features = features[X.columns]
 
-    available_features = int(features.notna().sum(axis=1).iloc[0])
+    available_features = int(
+        features.notna().sum(axis=1).iloc[0]
+    )
 
     st.write(
-        "Available feature values:",
+        "Available model feature values:",
         available_features,
         "out of",
         features.shape[1]
@@ -101,14 +110,20 @@ try:
 
     st.subheader("Seller Behaviour Features")
     st.subheader("Experimental Behavioural Trust Score")
+
     st.caption(
         "Score uses three behavioural features. Lower penalty "
         "contributes to a higher experimental trust score."
     )
 
-    experimental_path = "data/processed/seller_trust_scores.csv"
+    experimental_path = (
+        "data/processed/seller_trust_scores.csv"
+    )
+
     experimental_df = pd.read_csv(experimental_path)
-    experimental_df["date"] = pd.to_datetime(experimental_df["date"])
+    experimental_df["date"] = pd.to_datetime(
+        experimental_df["date"]
+    )
 
     selected_experimental = experimental_df[
         (experimental_df["seller_id"] == selected_seller)
@@ -118,18 +133,44 @@ try:
         )
     ]
 
+    behavioural_feature_columns = [
+        "delivery_latency_deviation_abs",
+        "review_sentiment_slope",
+        "order_value_velocity_pct",
+    ]
+
+    available_behavioural_features = 0
+
     if not selected_experimental.empty:
+        available_behavioural_features = int(
+            selected_experimental.iloc[0][
+                behavioural_feature_columns
+            ].notna().sum()
+        )
+
+    st.write(
+        "Available behavioural features:",
+        available_behavioural_features,
+        "out of 3"
+    )
+
+    score_row = None
+
+    if not selected_experimental.empty:
+
         score_row = selected_experimental.iloc[0]
-        experimental_score = selected_experimental[
+
+        experimental_score = score_row[
             "behavioral_trust_score"
-        ].iloc[0]
+        ]
 
         if pd.notna(experimental_score):
+
             st.metric(
                 "Experimental Trust Score",
                 f"{experimental_score:.2f}/100"
             )
-            
+
             st.subheader("Behavioural Feature Breakdown")
 
             feature_details = pd.DataFrame({
@@ -139,53 +180,136 @@ try:
                     "Order-Value Velocity (%)"
                 ],
                 "Value": [
-                    selected_experimental["delivery_latency_deviation_abs"].iloc[0],
-                    selected_experimental["review_sentiment_slope"].iloc[0],
-                    selected_experimental["order_value_velocity_pct"].iloc[0]
+                    score_row["delivery_latency_deviation_abs"],
+                    score_row["review_sentiment_slope"],
+                    score_row["order_value_velocity_pct"]
                 ]
             })
 
-            st.dataframe(feature_details, use_container_width=True)
+            st.dataframe(
+                feature_details,
+                use_container_width=True
+            )
 
         else:
-            st.warning("Experimental score unavailable for this date.")
+            st.warning(
+                "Experimental score unavailable for this date."
+            )
+
     else:
-        st.info("No experimental score found for this seller and date.")
+        st.info(
+            "No experimental score found for this seller and date."
+        )
+
+    # Behavioural feature coverage
+
+    if available_behavioural_features == 0:
+        st.warning(
+            "Behavioural trust score unavailable: "
+            "No behavioural features are available for this date."
+        )
+
+    elif available_behavioural_features == 1:
+        st.warning(
+            "Very limited coverage: Only 1 out of 3 behavioural "
+            "features is available."
+        )
+
+    elif available_behavioural_features == 2:
+        st.info(
+            "Partial coverage: 2 out of 3 behavioural "
+            "features are available."
+        )
+
+    else:
+        st.success(
+            "Complete coverage: All 3 behavioural "
+            "features are available."
+        )
+
+    # Main model feature table
 
     feature_table = features.T.copy()
     feature_table.columns = ["Value"]
     feature_table.index.name = "Feature"
-    st.dataframe(feature_table, use_container_width=True)
-    st.subheader("Penalty Breakdown")
-    delivery = score_row.get("delivery_latency_deviation_abs")
-    review = score_row.get("review_sentiment_slope")
-    sales = score_row.get("order_value_velocity_pct")
 
-    penalty_details = pd.DataFrame({
-        "Feature": [
-                    "Delivery Latency Deviation",
-                    "Review Score Change",
-                    "Order-Value Velocity",
-                ],
-                "Penalty": [
-                    min(abs(float(delivery)) / 30, 1) if pd.notna(delivery) else None,
-                    min(max(-float(review) / 4, 0), 1) if pd.notna(review) else None,
-                    min(abs(float(sales)) / 100, 1) if pd.notna(sales) else None,
-                ],
-                "Weight": [0.35, 0.30, 0.35],
-            })
+    st.subheader("Model Feature Details")
 
-    st.dataframe(penalty_details, use_container_width=True)
+    st.dataframe(
+        feature_table,
+        use_container_width=True
+    )
+
+    # Penalty breakdown
+
+    if score_row is not None:
+
+        st.subheader("Penalty Breakdown")
+
+        delivery = score_row.get(
+            "delivery_latency_deviation_abs"
+        )
+
+        review = score_row.get(
+            "review_sentiment_slope"
+        )
+
+        sales = score_row.get(
+            "order_value_velocity_pct"
+        )
+
+        penalty_details = pd.DataFrame({
+            "Feature": [
+                "Delivery Latency Deviation",
+                "Review Score Change",
+                "Order-Value Velocity",
+            ],
+
+            "Penalty": [
+                min(abs(float(delivery)) / 30, 1)
+                if pd.notna(delivery) else None,
+
+                min(max(-float(review) / 4, 0), 1)
+                if pd.notna(review) else None,
+
+                min(abs(float(sales)) / 100, 1)
+                if pd.notna(sales) else None,
+            ],
+
+            "Weight": [0.35, 0.30, 0.35],
+        })
+
+        st.dataframe(
+            penalty_details,
+            use_container_width=True
+        )
+
+    else:
+        st.info(
+            "Penalty breakdown unavailable for this seller and date."
+        )
+
+    # Main ML model prediction
 
     if available_features == 0:
+
         st.warning(
-            "Trust score unavailable: all behavioural features are missing "
-            "for this seller and date. Please select another date."
+            "Model prediction unavailable: All model feature values "
+            "are missing for this seller and date. "
+            "Please select another date."
         )
+
     else:
+
         X_imputed = imputer.transform(features)
-        risk_probability = float(model.predict_proba(X_imputed)[0, 1])
-        trust_score = round(100 * (1 - risk_probability), 2)
+
+        risk_probability = float(
+            model.predict_proba(X_imputed)[0, 1]
+        )
+
+        trust_score = round(
+            100 * (1 - risk_probability), 2
+        )
 
         st.divider()
         st.subheader("Seller Assessment")
@@ -205,9 +329,11 @@ try:
             )
 
         st.caption(
-            "This is a provisional behavioural-risk score, not proof of fraud "
-            "or a calibrated measure of trustworthiness."
+            "This is a provisional behavioural-risk score, not proof "
+            "of fraud or a calibrated measure of trustworthiness."
         )
+
+        # SHAP explanation
 
         st.divider()
         st.subheader("Why did the model give this score?")
@@ -217,8 +343,10 @@ try:
 
         if isinstance(shap_values, list):
             row_shap_values = shap_values[1][0]
+
         elif len(shap_values.shape) == 3:
             row_shap_values = shap_values[0, :, 1]
+
         else:
             row_shap_values = shap_values[0]
 
@@ -228,9 +356,13 @@ try:
             "SHAP Impact": row_shap_values
         })
 
-        explanation["Absolute Impact"] = explanation["SHAP Impact"].abs()
+        explanation["Absolute Impact"] = (
+            explanation["SHAP Impact"].abs()
+        )
+
         explanation = explanation.sort_values(
-            "Absolute Impact", ascending=False
+            "Absolute Impact",
+            ascending=False
         ).head(10)
 
         st.write(
@@ -239,7 +371,9 @@ try:
         )
 
         st.dataframe(
-            explanation.drop(columns=["Absolute Impact"]),
+            explanation.drop(
+                columns=["Absolute Impact"]
+            ),
             use_container_width=True
         )
 
